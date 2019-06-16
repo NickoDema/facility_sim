@@ -1,0 +1,311 @@
+FROM ubuntu:18.04
+MAINTAINER Nikolay Dema <ndema2301@gmail.com>
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    unzip \
+    curl \
+    git \
+    vim
+
+### Install ROS base ###
+
+RUN apt-key adv --keyserver "hkp://keyserver.ubuntu.com:80" --recv-keys "421C365BD9FF1F717815A3895523BAEEB01FA116"
+RUN echo "deb http://packages.ros.org/ros/ubuntu xenial main" > "/etc/apt/sources.list.d/ros-latest.list"
+
+ENV LANG       C.UTF-8
+ENV LC_ALL     C.UTF-8
+ENV ROS_DISTRO kinetic
+ENV ROS_INSTALL_PATH "/opt/ros/$ROS_DISTRO/"
+
+RUN apt-get update && apt-get install -y \
+    ros-$ROS_DISTRO-ros-base
+
+ENV PATH              "$PATH:$ROS_INSTALL_PATH/bin"
+ENV PYTHONPATH        "$ROS_INSTALL_PATH/lib/python2.7/dist-packages"
+ENV LD_LIBRARY_PATH   "$LD_LIBRARY_PATH:$ROS_INSTALL_PATH/lib"
+ENV PKG_CONFIG_PATH   "$PKG_CONFIG_PATH:$ROS_INSTALL_PATH/lib/pkgconfig"
+ENV CMAKE_PREFIX_PATH "$ROS_INSTALL_PATH"
+
+########################
+# Install dependencies #
+########################
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    liblapack-dev \
+    libopenblas-dev \
+    libusb-dev \
+    libyaml-cpp-dev \
+    libsdl-dev \
+    libsdl2-dev \
+    libsdl-image1.2-dev \
+    libqhull-dev \
+    libpcap-dev \
+    libassimp-dev \
+    libogre-1.9-dev \
+    libmodbus-dev \
+    libcwiid-dev \
+    libspnav-dev \
+    libfltk1.1-dev \
+    qt4-default \
+    gnuplot \
+    ros-$ROS_DISTRO-python-qt-binding \
+    ros-$ROS_DISTRO-resource-retriever \
+    ros-$ROS_DISTRO-urdf \
+    ros-$ROS_DISTRO-xacro \
+    ros-$ROS_DISTRO-velodyne-description \
+    ros-$ROS_DISTRO-ros-canopen \
+    ros-$ROS_DISTRO-move-base-msgs \
+    ros-$ROS_DISTRO-ros-control \
+    ros-$ROS_DISTRO-control-toolbox \
+    ros-$ROS_DISTRO-media-export \
+    ros-$ROS_DISTRO-people-msgs \
+    ros-$ROS_DISTRO-teleop-twist-keyboard \
+    python3 \
+    python3-pip \
+    python3-yaml \
+    python3-setuptools \
+    python3-tk \
+    python3-wheel \
+    python-pip \
+    python-cwiid
+
+# Some packages need both qt5 and qt4 but thtere is no way to install these packages in one apt-get command
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    qt5-default
+
+RUN pip3 install \
+    catkin_tools \
+
+# Install gazebo
+RUN curl -sSL "http://get.gazebosim.org" | sh
+
+##################################
+# Install libraries from sources #
+##################################
+
+ENV DEPS_DIR "/dependencies_sources"
+WORKDIR $DEPS_DIR
+
+ENV MARCH "-march=native -fopenmp"
+ENV EIGEN_COMPILE_FLAGS "-DEIGEN_USE_MKL_ALL -I${MKLROOT}/include"
+ENV EIGEN_DEPENDENCIES "-L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lstdc++ -lpthread -lm -ldl -liomp5"
+ENV BUILD_TYPE "Release"
+ENV CXX_STANDARD "14"
+
+# Note: all libraries are installed in /usr/local
+# SuiteSparse
+ADD "http://faculty.cse.tamu.edu/davis/SuiteSparse/SuiteSparse-5.3.0.tar.gz" "$DEPS_DIR/SuiteSparse.tar.gz"
+
+RUN tar -xzf "$DEPS_DIR/SuiteSparse.tar.gz" -C "$DEPS_DIR" && \
+    cd "$DEPS_DIR/SuiteSparse/" && \
+    make -j8 install INSTALL="/usr/local" && \
+    rm -rf "$DEPS_DIR/SuiteSparse.tar.gz"
+
+# Eigen 3.3.7
+RUN git clone "https://github.com/eigenteam/eigen-git-mirror" && \
+    cd "$DEPS_DIR/eigen-git-mirror/" && \
+    git checkout "cf794d3b741a6278df169e58461f8529f43bce5d" && \
+    mkdir "build" && cd "build" && \
+    cmake .. && make install
+
+# General Graph Optimization (g2o)
+RUN git clone "https://github.com/RainerKuemmerle/g2o.git" && \
+    cd "$DEPS_DIR/g2o/" && \
+    git checkout "6415082bf6ee60529ac2c530be749346569cb4ae" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH $EIGEN_COMPILE_FLAGS" \
+             -DCMAKE_CXX_STANDARD_LIBRARIES="$EIGEN_DEPENDENCIES" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && make -j8 && make install && rm -rf *
+
+# OpenCV
+RUN git clone -b 3.4 "https://github.com/opencv/opencv_contrib.git" && \
+    cd "$DEPS_DIR/opencv_contrib/" && \
+    git checkout "6d16876ee2b25519618e74346eabff154b5fcbdc"
+
+RUN git clone -b 3.4 "https://github.com/opencv/opencv.git" && \
+    cp -R "$DEPS_DIR/opencv_contrib/modules/tracking" "$DEPS_DIR/opencv/modules/" && \
+    cp -R "$DEPS_DIR/opencv_contrib/modules/plot"     "$DEPS_DIR/opencv/modules/" && \
+    cd "$DEPS_DIR/opencv/" && \
+    git checkout "d8b8c3b1456b508fb903843bcdcdb98036a77c73" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+             -DOPENCV_CXX11="YES" \
+             -DWITH_CUDA=ON \
+             -DENABLE_FAST_MATH=1 \
+             -DCUDA_FAST_MATH=1 \
+             -DWITH_CUBLAS=1 \
+    && make -j8 && make install && rm -rf *
+
+# Orocos KDL
+RUN git clone "https://github.com/orocos/orocos_kinematics_dynamics.git" && \
+    cd "$DEPS_DIR/orocos_kinematics_dynamics/orocos_kdl/" && \
+    git checkout "a7a8d282a5a94948176f2c5af58fbd047d849030" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && make -j8 && make install && rm -rf *
+
+# Bullet
+RUN git clone "https://github.com/bulletphysics/bullet3.git" && \
+    cd "$DEPS_DIR/bullet3/" && \
+    git checkout "5ed461f5120b0c713f35ce4fb509ce43ea54710f" && \
+    mkdir my_build && cd my_build && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && make -j8 && make install && rm -rf *
+
+# FLANN
+RUN git clone "https://github.com/mariusmuja/flann.git" && \
+    cd "$DEPS_DIR/flann/" && \
+    git checkout "9f78af90332840de19d49e78683e890128fee3c5" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+             -DBUILD_CUDA_LIB=ON \
+    && make -j8 && make install && rm -rf *
+
+# Orocos Bayesian filtering
+RUN git clone "https://github.com/toeklk/orocos-bayesian-filtering.git" && \
+    cd "$DEPS_DIR/orocos-bayesian-filtering/orocos_bfl/" && \
+    git checkout "208eecaf9a291dd6d5f9c10392c464e1c7b08198" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && make -j8 && make install && rm -rf *
+
+# PCL
+RUN git clone "https://github.com/PointCloudLibrary/pcl.git" && \
+    cd "$DEPS_DIR/pcl/" && \
+    git checkout "cf45c8a7bc7440f5c1167b0718bdd02409f94dfe" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH $EIGEN_COMPILE_FLAGS" \
+             -DCMAKE_CXX_STANDARD_LIBRARIES="$EIGEN_DEPENDENCIES" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && make -j8 && make install && rm -rf *
+
+# Octomap
+RUN git clone "https://github.com/OctoMap/octomap.git" && \
+    cd "$DEPS_DIR/octomap/" && \
+    git checkout "aef5c4593712ed81230c6d44ef0091a8de45bf10" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && make -j8 && make install && rm -rf *
+
+# Stage
+RUN git clone "https://github.com/rtv/Stage.git" && \
+    cd "$DEPS_DIR/Stage/" && \
+    git checkout "0c85412d99ecb134088a2b72d541938e5d0657f1" && \
+    mkdir "build" && cd "build" && \
+    cmake .. -DCMAKE_CXX_FLAGS="$MARCH" \
+             -DCMAKE_C_FLAGS="$MARCH" \
+             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+             -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && make -j8 && make install && rm -rf *
+
+#Darknet Yolo v3
+RUN git clone "https://github.com/AlexeyAB/darknet.git" && \
+    cd "$DEPS_DIR/darknet/" && \
+    git checkout "6231b748c44e2007b5c3cbf765a50b122782c5a2" && \
+    make -j8 GPU=1 CUDNN=1 CUDNN_HALF=1 AVX=1 OPENMP=1 LIBSO=1
+
+#OpenNI 2.3
+ADD "http://dl.orbbec3d.com/dist/openni2/OpenNI_2.3.0.55.zip" "$DEPS_DIR/OpenNI2.zip"
+
+RUN mkdir "/usr/local/include/openni2/" && \
+    unzip "$DEPS_DIR/OpenNI2.zip" && \
+    cd "$DEPS_DIR/OpenNI_2.3.0.55/Linux/OpenNI-Linux-x64-2.3.0.55/" && \
+    cp -R Redist/* "/usr/local/lib/" && \
+    cp -R Include/* "/usr/local/include/openni2/" && \
+    rm -rf "$DEPS_DIR/OpenNI2.zip" "$DEPS_DIR/OpenNI_2.3.0.55/"
+
+##############################################
+# Install ROS dependencies from source tools #
+##############################################
+
+RUN mkdir -p "$DEPS_DIR/std_ros/src/" && cd "$DEPS_DIR/std_ros/src/" && \
+    git clone -b "master"        "https://github.com/ros/angles.git" && \
+    git clone -b "indigo-devel"  "https://github.com/ros/diagnostics.git" && \
+    git clone -b "melodic-devel" "https://github.com/ros/geometry.git" && \
+    git clone -b "melodic-devel" "https://github.com/ros/geometry2.git" && \
+    git clone -b "hydro-devel"   "https://github.com/ros-perception/image_common.git" && \
+    git clone -b "indigo-devel"  "https://github.com/ros-visualization/interactive_markers.git" && \
+    git clone -b "jade-devel"    "https://github.com/ros-planning/navigation_msgs.git" && \
+    git clone -b "indigo-devel"  "https://github.com/ros-perception/laser_geometry.git" && \
+    git clone -b "deprecated"    "https://github.com/ros-perception/pcl_conversions.git" && \
+    git clone -b "indigo-devel"  "https://github.com/ros-perception/pcl_msgs.git" && \
+    git clone -b "melodic-devel" "https://github.com/ros-perception/perception_pcl.git" && \
+    git clone -b "master"        "https://github.com/ros/roslint.git" && \
+    git clone -b "kinetic-devel" "https://github.com/ros-visualization/rviz.git" && \
+    git clone -b "kinetic-devel" "https://github.com/ros-visualization/visualization_tutorials.git" && \
+    git clone -b "kinetic"       "https://github.com/ros-perception/vision_opencv.git" && \
+    git clone -b "kinetic-devel" "https://github.com/OctoMap/octomap_mapping.git" && \
+    git clone -b "kinetic-devel" "https://github.com/ros/robot_state_publisher.git" && \
+    git clone -b "kinetic-devel" "https://github.com/ros/joint_state_publisher.git" && \
+    git clone -b "indigo-devel"  "https://github.com/OctoMap/octomap_ros.git" && \
+    git clone -b "kinetic-devel" "https://github.com/OctoMap/octomap_msgs.git" && \
+    git clone -b "kinetic-devel" "https://github.com/ros/kdl_parser.git" && \
+    git clone -b "lunar-devel"   "https://github.com/ros-perception/pointcloud_to_laserscan.git" && \
+    git clone -b "kinetic-devel" "https://github.com/ros-simulation/gazebo_ros_pkgs.git" && \
+    git clone -b "master"        "https://github.com/ros-perception/openslam_gmapping.git" && \
+    git clone -b "hydro-devel"   "https://github.com/ros-perception/slam_gmapping.git" && \
+    git clone -b "lunar-devel"   "https://github.com/ros-simulation/stage_ros.git"
+
+RUN catkin_make install --source "$DEPS_DIR/std_ros/src/" \
+                        -DCMAKE_CXX_FLAGS="$MARCH $EIGEN_COMPILE_FLAGS" \
+                        -DCMAKE_CXX_STANDARD_LIBRARIES="$EIGEN_DEPENDENCIES" \
+                        -DCMAKE_C_FLAGS="$MARCH" \
+                        -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+                        -DCMAKE_INSTALL_PREFIX="$ROS_INSTALL_PATH" \
+                        -DCMAKE_CXX_STANDARD="$CXX_STANDARD" \
+    && rm -rf "build/" "devel/"
+
+##############
+# Bash setup #
+##############
+
+WORKDIR "/"
+RUN echo "source $ROS_INSTALL_PATH/setup.bash" >> "/root/.bashrc"
+
+###########################
+# Install developer tools #
+###########################
+
+RUN apt-get update && apt-get install -y \
+    bash-completion \
+    gnome-terminal \
+    terminator \
+    gitk \
+    gedit \
+    nautilus \
+    nano \
+    mc \
+    valgrind \
+    htop
+
+# Enable bash auto-completion
+RUN echo "if [ -f /etc/bash_completion ] && ! shopt -oq posix; then" >> "/root/.bashrc" && \
+    echo "    . /etc/bash_completion"                                >> "/root/.bashrc" && \
+    echo "fi"                                                        >> "/root/.bashrc"
+
+# run bash
+CMD ["bash"]
