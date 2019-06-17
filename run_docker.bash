@@ -2,7 +2,21 @@
 
 HOST_IP_WLAN=(`ifconfig wlp1s0 | grep -Po 'inet addr:\K[\d.]+'`)  #Get wlan ip-adress
 
-xhost +local:docker           || true
+xhost +local:docker || true
+
+if [ $# -eq 1 ]
+  then
+    TAG="facility_sim"
+else
+    if [ $# -ne 2 ]
+      then
+        CNAME="fsim"
+        TAG="facility_sim"
+    else
+        TAG=$2
+        CNAME=$1
+    fi
+fi
 
 sudo docker run -ti --rm \
                 --env="DISPLAY" \
@@ -11,4 +25,4 @@ sudo docker run -ti --rm \
                 -v /dev:/dev \
                 --net=host \
                 --privileged \
-                --name $1 $2
+                --name $CNAME $TAG
