@@ -14,4 +14,4 @@ Arguments of the scripts are optional.
 
 ## Simulation
 
-blah
+![sim oops](https://github.com/NickoDema/facility_sim/blob/master/docs/pics/ariac_sim.png)
