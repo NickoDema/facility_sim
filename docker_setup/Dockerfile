@@ -79,12 +79,12 @@ ENV LD_LIBRARY_PATH   "$LD_LIBRARY_PATH:$ROS_INSTALL_PATH/lib"
 ENV PKG_CONFIG_PATH   "$PKG_CONFIG_PATH:$ROS_INSTALL_PATH/lib/pkgconfig"
 ENV CMAKE_PREFIX_PATH "$ROS_INSTALL_PATH"
 
-RUN apt-get install -y ros-melodic-polled-camera ros-melodic-camera-info-manager \
-                       ros-melodic-control-toolbox ros-melodic-hardware-interface \
-                       ros-melodic-transmission-interface \
-                       ros-melodic-joint-limits-interface \
-                       ros-melodic-controller-manager
-
+RUN DEBIAN_FRONTEND=noninteractive  apt-get install -y ros-melodic-polled-camera \
+                                                       ros-melodic-camera-info-manager \
+                                                       ros-melodic-control-toolbox ros-melodic-hardware-interface \
+                                                       ros-melodic-transmission-interface \
+                                                       ros-melodic-joint-limits-interface \
+                                                       ros-melodic-controller-manager
 
 RUN cd "$CATKIN_TWS_PATH" && catkin build
 
@@ -98,7 +98,7 @@ RUN echo "source $CATKIN_TWS_PATH/devel/setup.bash" >> "/root/.bashrc"
 RUN echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable bionic main" > /etc/apt/sources.list.d/gazebo-stable.list
 RUN wget http://packages.osrfoundation.org/gazebo.key -O - | apt-key add -
 
-RUN apt-get update && apt-get install -y ariac3
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ariac3
 
 
 # run bash
