@@ -9,9 +9,9 @@ source build_docker.bash <tag_name>
 ```
 source run_docker.bash <container_name> <tag_name>
 ```
-Arguments of the scripts are optional. 
+Arguments of the scripts are optional.
 
 
 ## Simulation
 
-![sim oops](https://github.com/NickoDema/facility_sim/blob/master/docs/pics/ariac_sim.png)
+![sim ooops](https://github.com/NickoDema/facility_sim/blob/master/docs/pics/ariac_sim.png)
